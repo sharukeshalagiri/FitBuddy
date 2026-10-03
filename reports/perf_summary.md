@@ -1,35 +1,50 @@
 # FitBuddy – Load Test Summary (Phase 6)
 
-- **Date:** 2026-10-03
+- **Date:** 2026-10-03, 19:17–19:18 IST
 - **Tool:** Locust 2.46 (`tests/locustfile.py`), headless
 - **Command:** `locust -f tests/locustfile.py --headless -u 50 -r 10 -t 60s --host http://127.0.0.1:8000 --csv reports/perf --html reports/perf.html`
+- **Runner:** `python tests/resource_monitor.py` starts the server, runs the command above and samples
+  the server's CPU and memory every second with `psutil` (→ `reports/resource_usage.csv`)
 - **Server:** `uvicorn app.main:app` (single worker), **demo mode** (no Gemini calls), SQLite (WAL)
-- **Machine:** Windows 11 laptop, Python 3.13
+- **Machine:** Windows 11 laptop, 8 logical cores, 8 GB RAM, Python 3.13
 
-| Endpoint | Requests | Failures | Median (ms) | Avg (ms) | Max (ms) |
-|---|---:|---:|---:|---:|---:|
-| GET / | 552 | 0 | 3 | 3.7 | 58 |
-| GET /api/health | 376 | 0 | 3 | 4.0 | 59 |
-| GET /nutrition-tip | 337 | 0 | 2 | 3.1 | 23 |
-| POST /generate-plan | 168 | 0 | 11 | 16.6 | 357 |
-| **Aggregated** | **1433** | **0 (0%)** | **3** | **5.2** | **357** |
+| Endpoint | Requests | Failures | Median (ms) | Avg (ms) | Max (ms) | Req/s |
+|---|---:|---:|---:|---:|---:|---:|
+| GET / | 550 | 0 | 3 | 4.0 | 63 | 9.3 |
+| GET /api/health | 353 | 0 | 3 | 4.0 | 68 | 5.9 |
+| GET /nutrition-tip | 348 | 0 | 3 | 3.8 | 52 | 5.9 |
+| POST /generate-plan | 206 | 0 | 11 | 14.1 | 77 | 3.5 |
+| **Aggregated** | **1457** | **0 (0%)** | **3** | **5.4** | **77** | **24.5** |
 
-Throughput ≈ 24.5 req/s at 50 concurrent users (with 1–3 s think time).
+Throughput ≈ 24.5 req/s at 50 concurrent users (with 1–3 s think time). Source: `reports/perf_stats.csv`.
 
 ## Against targets
 
 | Target | Result | Status |
 |---|---|---|
-| Average response < 2 s | 5.2 ms | ✅ |
-| Max response < 5 s | 357 ms | ✅ |
+| Average response < 2 s | 5.4 ms | ✅ |
+| Max response < 5 s | 77 ms | ✅ |
 | Error rate < 1 % | 0 % | ✅ |
+
+## Server resource usage
+
+Sampled once per second for the whole run (59 samples, `reports/resource_usage.csv`).
+
+| Metric | Average | Peak |
+|---|---:|---:|
+| CPU, % of one core | 4.23 % | 13.9 % |
+| CPU, % of whole system (8 cores) | 0.53 % | 1.74 % |
+| Memory (RSS) | 81.2 MB | 81.6 MB |
+| Memory, % of system RAM (8,023 MB) | 1.01 % | 1.02 % |
+
+Memory rose from 75 MB at startup to about 81 MB in the first few seconds and then stayed flat (no leak).
+On Windows the venv runs the server as two `python.exe` processes (a small launcher plus the actual
+server); the figures are the two combined, so the server alone uses slightly less.
 
 ## Notes
 
 - Demo mode measures the application stack itself (FastAPI, Jinja2, SQLAlchemy and SQLite writes).
   Real Gemini generation adds model latency on top; typically several seconds per plan.
-- Locust printed a `ValueError: I/O operation on closed file` traceback at shutdown. This is a known
-  race in Locust's CSV writer on Windows; the CSV/HTML reports were written completely.
 
 ---
 

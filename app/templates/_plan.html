@@ -1,0 +1,40 @@
+{# Renders a structured WorkoutPlan dict as day cards. Expects `plan`. #}
+<div class="plan">
+  <div class="plan-header">
+    <h2>{{ plan.title }}</h2>
+    <p class="muted">{{ plan.summary }}</p>
+  </div>
+  <div class="days-grid">
+    {% for d in plan.days %}
+    <article class="day-card {% if d.is_rest_day %}rest{% endif %}">
+      <div class="day-head">
+        <span class="day-num">Day {{ d.day }}</span>
+        {% if d.is_rest_day %}<span class="tag tag-rest">Recovery</span>{% endif %}
+      </div>
+      <h3>{{ d.focus }}</h3>
+      <p class="phase"><span>🔥 Warm-up</span> {{ d.warmup }}</p>
+      {% if d.exercises %}
+      <ul class="exercises">
+        {% for ex in d.exercises %}
+        <li>
+          <div class="ex-name">{{ ex.name }}</div>
+          <div class="ex-meta">
+            {% if ex.sets %}<span>{{ ex.sets }} × {{ ex.reps }}</span>{% else %}<span>{{ ex.reps }}</span>{% endif %}
+            {% if ex.rest_seconds %}<span>⏱ {{ ex.rest_seconds }}s rest</span>{% endif %}
+          </div>
+          {% if ex.notes %}<div class="ex-cue">{{ ex.notes }}</div>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <p class="phase"><span>🧘 Cooldown</span> {{ d.cooldown }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  {% if plan.safety_notes %}
+  <div class="card safety">
+    <h3>⚠️ Safety notes</h3>
+    <ul>{% for n in plan.safety_notes %}<li>{{ n }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+</div>

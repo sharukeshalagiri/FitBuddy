@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}FitBuddy – AI Fitness Plan Generator{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="brand">💪 FitBuddy</a>
+    <nav>
+      {% if demo_mode() %}<span class="badge badge-demo" title="No Gemini API key configured – using built-in demo plans">Demo mode</span>{% endif %}
+      <a href="/">New plan</a>
+      <a href="/view-all-users">Admin</a>
+      <a href="/docs">API</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    FitBuddy provides general fitness information, not medical advice. Consult a doctor before
+    starting a new exercise program.
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

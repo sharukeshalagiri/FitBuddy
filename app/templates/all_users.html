@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Admin dashboard – FitBuddy{% endblock %}
+{% block content %}
+<div class="admin-head">
+  <h1>Admin dashboard</h1>
+  <a href="/admin/logout" class="btn btn-secondary">Log out</a>
+</div>
+{% if deleted %}<div class="alert alert-success" role="status">User and plans deleted.</div>{% endif %}
+
+<section class="card">
+  <p class="muted">{{ rows | length }} user{{ '' if rows | length == 1 else 's' }}</p>
+  {% if not rows %}
+  <p>No users yet. <a href="/">Create the first plan →</a></p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="users-table">
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Age</th><th>Weight</th><th>Goal</th><th>Intensity</th>
+          <th>Experience</th><th>Versions</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      {% set u = r.user %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td><a href="/plan/{{ u.id }}">{{ u.name }}</a></td>
+        <td>{{ u.age }}</td>
+        <td>{{ '%g' % u.weight_kg }} kg</td>
+        <td>{{ u.goal }}</td>
+        <td>{{ u.intensity | title }}</td>
+        <td>{{ u.experience | title }}</td>
+        <td>{{ r.versions }}</td>
+        <td class="small">{{ u.created_at.strftime('%d %b %Y %H:%M') }}</td>
+        <td>
+          <form method="post" action="/admin/delete-user/{{ u.id }}" data-name="{{ u.name }}"
+                onsubmit="return confirm('Delete ' + this.dataset.name + ' and all their plans?');">
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr class="plans-row">
+        <td colspan="10">
+          <div class="compare">
+            {% for label, p in [('Original plan (v1)', r.original), ('Latest plan (v' ~ r.versions ~ ')', r.latest)] %}
+            <details>
+              <summary>{{ label }}{% if p %} — {{ p.plan.title }}{% endif %}</summary>
+              {% if p %}
+                {% if p.feedback %}<p class="small muted">Feedback: “{{ p.feedback }}”</p>{% endif %}
+                <ol class="mini-plan">
+                {% for d in p.plan.days %}
+                  <li><strong>Day {{ d.day }} – {{ d.focus }}</strong>
+                    {% if d.exercises %}: {{ d.exercises | map(attribute='name') | join(', ') }}{% endif %}</li>
+                {% endfor %}
+                </ol>
+              {% else %}<p class="muted">No plan.</p>{% endif %}
+            </details>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

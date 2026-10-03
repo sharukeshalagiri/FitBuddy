@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Your AI-powered 7-day fitness plan</h1>
+  <p>Tell us about yourself and FitBuddy will build a personalized weekly workout with a
+     nutrition &amp; recovery tip — powered by Google Gemini.</p>
+</section>
+
+<section class="card form-card">
+  {% if errors %}
+  <div class="alert alert-error" role="alert">
+    <strong>Please fix the following:</strong>
+    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <form id="plan-form" method="post" action="/generate-workout">
+    <div class="field">
+      <label for="name">Name</label>
+      <input id="name" name="name" type="text" required maxlength="100"
+             value="{{ form.name or '' }}" placeholder="e.g. Priya">
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="age">Age</label>
+        <input id="age" name="age" type="number" required min="13" max="90"
+               value="{{ form.age or '' }}" placeholder="13–90">
+      </div>
+      <div class="field">
+        <label for="weight">Weight (kg)</label>
+        <input id="weight" name="weight" type="number" required min="25" max="300" step="0.1"
+               value="{{ form.weight or '' }}" placeholder="25–300">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="goal">Fitness goal</label>
+      <select id="goal" name="goal" required>
+        <option value="" disabled {% if not form.goal %}selected{% endif %}>Choose a goal…</option>
+        {% for g in common_goals %}
+        <option value="{{ g }}" {% if form.goal == g %}selected{% endif %}>{{ g | title }}</option>
+        {% endfor %}
+        <option value="other" {% if form.goal == 'other' %}selected{% endif %}>Other…</option>
+      </select>
+      <input id="goal_other" name="goal_other" type="text" maxlength="200"
+             class="{% if form.goal != 'other' %}hidden{% endif %}"
+             value="{{ form.goal_other or '' }}" placeholder="Describe your goal (e.g. run a 5K)">
+    </div>
+
+    <div class="row">
+      <fieldset class="field">
+        <legend>Workout intensity</legend>
+        <div class="pills">
+          {% for i in ['low', 'medium', 'high'] %}
+          <label class="pill"><input type="radio" name="intensity" value="{{ i }}" required
+            {% if form.intensity == i or (not form.intensity and i == 'medium') %}checked{% endif %}>
+            <span>{{ i | title }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <fieldset class="field">
+        <legend>Experience</legend>
+        <div class="pills">
+          {% for x in ['beginner', 'intermediate', 'advanced'] %}
+          <label class="pill"><input type="radio" name="experience" value="{{ x }}" required
+            {% if form.experience == x or (not form.experience and x == 'beginner') %}checked{% endif %}>
+            <span>{{ x | title }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block" id="submit-btn">
+      <span class="btn-label">Generate my plan</span>
+      <span class="btn-loading"><span class="spinner"></span> Generating your plan…</span>
+    </button>
+    <p class="hint">Generation can take 10–30 seconds.</p>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const goal = document.getElementById('goal');
+  const other = document.getElementById('goal_other');
+  function syncGoal() {
+    const isOther = goal.value === 'other';
+    other.classList.toggle('hidden', !isOther);
+    other.required = isOther;
+  }
+  goal.addEventListener('change', syncGoal); syncGoal();
+  document.getElementById('plan-form').addEventListener('submit', function () {
+    const btn = document.getElementById('submit-btn');
+    btn.classList.add('loading'); btn.disabled = true;
+  });
+</script>
+{% endblock %}

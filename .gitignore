@@ -1,0 +1,14 @@
+.env
+fitbuddy.db
+*.db
+__pycache__/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+*.db-wal
+*.db-shm
+reports/*.db
+
+# Claude Code project instructions (local only)
+CLAUDE.md

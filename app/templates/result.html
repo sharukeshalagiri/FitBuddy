@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ user.name }}'s plan – FitBuddy{% endblock %}
+{% block content %}
+
+{% if updated %}
+<div class="alert alert-success" role="status">✅ Your plan has been updated based on your feedback!</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<section class="card user-card">
+  <div>
+    <h1>Hi {{ user.name }} 👋</h1>
+    <p class="muted">Here is your personalized plan.</p>
+  </div>
+  <div class="user-stats">
+    <div><span>Age</span><strong>{{ user.age }}</strong></div>
+    <div><span>Weight</span><strong>{{ '%g' % user.weight_kg }} kg</strong></div>
+    <div><span>Goal</span><strong>{{ user.goal | title }}</strong></div>
+    <div><span>Intensity</span><strong>{{ user.intensity | title }}</strong></div>
+    <div><span>Experience</span><strong>{{ user.experience | title }}</strong></div>
+  </div>
+</section>
+
+<div class="version-bar no-print">
+  <div>
+    <strong>Version {{ current.version }}</strong>
+    {% if current.version == 1 %}(original){% endif %}
+    {% if not is_latest %}<span class="tag">Older version</span> <a href="/plan/{{ user.id }}">View latest (v{{ latest.version }}) →</a>{% endif %}
+    {% if current.source == 'demo' %}<span class="badge badge-demo">Demo plan</span>{% endif %}
+    {% if current.feedback %}<div class="muted small">Based on feedback: “{{ current.feedback }}”</div>{% endif %}
+  </div>
+  <button type="button" class="btn btn-secondary" onclick="window.print()">🖨 Print plan</button>
+</div>
+
+{% include "_plan.html" %}
+
+{% if current.nutrition_tip %}
+<section class="card tip-card">
+  <h3>💡 Nutrition &amp; recovery tip</h3>
+  <p>{{ current.nutrition_tip }}</p>
+</section>
+{% endif %}
+
+<div class="two-col no-print">
+  <section class="card feedback-card">
+    <h3>Want changes?</h3>
+    <p class="muted">Tell FitBuddy what to adjust — your latest plan (v{{ latest.version }}) will be revised and the previous versions kept.</p>
+    <form method="post" action="/submit-feedback" id="feedback-form">
+      <input type="hidden" name="user_id" value="{{ user.id }}">
+      <div class="chips">
+        {% for c in ['More cardio', 'Add a rest day', 'Shorter workouts', 'No equipment'] %}
+        <button type="button" class="chip" data-text="{{ c }}">{{ c }}</button>
+        {% endfor %}
+      </div>
+      <textarea name="feedback" id="feedback" rows="4" maxlength="500" required
+                placeholder="e.g. I'd like more cardio and only 45-minute sessions">{{ feedback_value }}</textarea>
+      <button type="submit" class="btn btn-primary" id="fb-btn">
+        <span class="btn-label">Update my plan</span>
+        <span class="btn-loading"><span class="spinner"></span> Updating your plan…</span>
+      </button>
+    </form>
+  </section>
+
+  <section class="card history-card">
+    <h3>Version history</h3>
+    <ol class="history">
+      {% for p in history | reverse %}
+      <li class="{% if p.version == current.version %}active{% endif %}">
+        <a href="/plan/{{ user.id }}/version/{{ p.version }}">v{{ p.version }}</a>
+        <span class="muted small">{{ p.created_at.strftime('%d %b %Y, %H:%M') }} UTC</span>
+        <div class="small">{% if p.feedback %}“{{ p.feedback | truncate(80) }}”{% else %}Original plan{% endif %}</div>
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const ta = document.getElementById('feedback');
+  document.querySelectorAll('.chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      const t = chip.dataset.text;
+      ta.value = ta.value.trim() ? ta.value.trim() + '. ' + t : t;
+      ta.focus();
+    });
+  });
+  document.getElementById('feedback-form').addEventListener('submit', function () {
+    const btn = document.getElementById('fb-btn');
+    btn.classList.add('loading'); btn.disabled = true;
+  });
+</script>
+{% endblock %}

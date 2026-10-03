@@ -140,11 +140,6 @@ def get_original_plan(user_id: int) -> Optional[Plan]:
                          .order_by(Plan.version.asc()).limit(1))
 
 
-def get_plan_version(user_id: int, version: int) -> Optional[Plan]:
-    with SessionLocal() as db:
-        return db.scalar(select(Plan).where(Plan.user_id == user_id, Plan.version == version))
-
-
 def get_plan_history(user_id: int) -> list[Plan]:
     with SessionLocal() as db:
         return list(db.scalars(select(Plan).where(Plan.user_id == user_id)

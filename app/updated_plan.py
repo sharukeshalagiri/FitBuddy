@@ -4,7 +4,7 @@ import json
 from app import config, demo_data
 from app.gemini_client import generate_structured
 from app.gemini_generator import SYSTEM_PROMPT as PLAN_RULES
-from app.schemas import WorkoutPlan
+from app.schemas import WorkoutPlan, wrap_untrusted
 
 SYSTEM_PROMPT = PLAN_RULES + """
 You are now REVISING an existing plan. Return the FULL revised 7-day plan as JSON.
@@ -20,15 +20,16 @@ def update_workout_plan(latest_plan: dict, feedback: str, user) -> tuple[dict, s
     """Return (revised_plan_dict, source). Raises GeminiError on AI failure."""
     feedback = feedback.strip()[: config.MAX_FEEDBACK_LENGTH]
     if config.DEMO_MODE:
-        return demo_data.demo_revise_plan(latest_plan, feedback), "demo"
+        return demo_data.demo_revise_plan(latest_plan, feedback, experience=user.experience,
+                                          age=user.age, intensity=user.intensity), "demo"
 
-    safe_feedback = feedback.replace("<", "‹").replace(">", "›")  # can't close the tag
     prompt = (
         "User profile:\n"
-        f"- Goal: {user.goal}\n- Intensity: {user.intensity}\n- Experience: {user.experience}\n"
+        f"- Goal: {wrap_untrusted('goal', user.goal)}\n"
+        f"- Intensity: {user.intensity}\n- Experience: {user.experience}\n"
         f"- Age: {user.age}\n- Weight: {user.weight_kg:g} kg\n\n"
         f"Current plan (latest version):\n{json.dumps(latest_plan, ensure_ascii=False)}\n\n"
-        f"<feedback>\n{safe_feedback}\n</feedback>\n\n"
+        f"{wrap_untrusted('feedback', feedback)}\n\n"
         "Return the full revised plan."
     )
     plan, _ = generate_structured(config.GEMINI_WORKOUT_MODEL, SYSTEM_PROMPT, prompt, WorkoutPlan,

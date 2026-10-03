@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from starlette.exceptions import HTTPException
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import config
@@ -19,6 +19,8 @@ log = logging.getLogger("fitbuddy")
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    for msg in config.STARTUP_WARNINGS:
+        logging.getLogger("fitbuddy.config").warning(msg)
     if config.DEMO_MODE:
         log.info("FitBuddy running in DEMO MODE (no Gemini key or DEMO_MODE=true)")
     else:
@@ -40,7 +42,6 @@ app.include_router(router)
 @app.exception_handler(HTTPException)
 async def http_error_handler(request: Request, exc: HTTPException):
     """JSON for API clients, a friendly page for browsers."""
-    from fastapi.exception_handlers import http_exception_handler
     if "text/html" in request.headers.get("accept", ""):
         return templates.TemplateResponse(
             request, "error.html", {"status": exc.status_code, "detail": exc.detail},

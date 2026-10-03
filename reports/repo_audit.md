@@ -4,7 +4,33 @@
 - **Scope:** every tracked file in the repo (commit `41770b5`), all 22 phase PDFs (read with `pdftotext`),
   a fresh clone of `origin/main`, and edge-case probes against the app in demo mode with a throwaway DB.
 - **Change made during the audit:** added `.gitattributes` (`reports/** linguist-generated=true`). No code
-  was changed.
+  was changed during the audit itself; the fix round that followed is summarised under Resolution status.
+
+## Resolution status (2026-10-03, after the fix round)
+
+| Item | Status | Where |
+|---|---|---|
+| H-1 default `SECRET_KEY` | ✅ Resolved | `app/config.py` `_resolve_secret_key` (random key when unset / `change-me`) and `startup_warnings` (logged by `app/main.py` lifespan, also warns on `admin123`); `.env.example` leaves `SECRET_KEY` empty; `tests/test_security.py` |
+| H-2 README load-test numbers | ✅ Resolved | README "Load test": 1,457 requests, 77 ms max, CPU/memory |
+| H-3 README Phase 7 row | ✅ Resolved | README phase table lists "FitBuddy Project Documentation" |
+| H-4 demo video link | ⏳ Open | needs the team's recording |
+| M-1 sequential IDs / no accounts | 📝 Documented | README "Known limitations" |
+| M-2 empty `ADMIN_PASSWORD` | ✅ Resolved | `app/routes.py` `_admin_enabled` (login 401 "Admin access is disabled", cookies ignored); `tests/test_security.py` |
+| M-3 plan validation | ✅ Resolved | `app/schemas.py` (days exactly 1–7, ≥1 rest day, positive sets/rest); invalid AI plans use the existing invalid-output retry → 502; `tests/test_ai_hardening.py` |
+| M-4 demo revision safety | ✅ Resolved | `app/demo_data.py` `_profile` shared by generation and revision (experience, teen 13–17, 60+ low-impact, age notes); `app/updated_plan.py` passes the profile; `tests/test_demo_safety.py` |
+| M-5 request time | ✅ Resolved | `app/gemini_client.py` budgets: plan 50 s (retries + invalid-JSON retry + fallback share it, per-request timeout capped) + tip 10 s, no retry ≈ 60 s; `tests/test_ai_hardening.py` |
+| M-6 goal fencing | ✅ Resolved | `app/schemas.py` `wrap_untrusted`, used for the goal in plan, revision and tip prompts (and for feedback); system prompts say to treat it as data |
+| M-7 duplicate versions | 📝 Documented | README "Known limitations" |
+| M-8 pinned requirements | ✅ Resolved | `requirements.txt` pinned to the venv versions (+ `psutil`) |
+| L-1, L-2, L-4, L-5, L-9 | ✅ Resolved | unused import/helpers removed (`get_original_plan` kept: named in the spec), `demo_revise_plan` split into rule helpers, imports moved to top, word-boundary goal matching |
+| L-3 | ◐ Partly | docstrings added to the three API endpoints; other helpers unchanged |
+| L-6, L-7, L-8, L-10, L-11, L-12 | ⏳ Open | low priority |
+
+Test suite after the fixes: **245 passed** (35 in `test_routes.py`, 6 in `test_security.py`, 22 in
+`test_ai_hardening.py`, 182 in `test_demo_safety.py`, most of them one parametrized check over every
+goal × intensity × experience × age combination).
+
+---
 
 ## Language bar after the `.gitattributes` fix
 
@@ -20,7 +46,7 @@ these files (PDF, PNG, Markdown, CSV, INI and `.env.example` don't count toward 
 
 GitHub recalculates the language bar in the background, so it can take a few minutes after the push to update.
 
-## Checks run
+## Checks run (pre-fix snapshot)
 
 | Check | Result |
 |---|---|
@@ -36,7 +62,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 
 ## 🔴 High: fix before submission
 
-### H-1 · Default `SECRET_KEY` lets anyone forge the admin cookie
+### H-1 · Default `SECRET_KEY` lets anyone forge the admin cookie — ✅ Resolved
 - **Where:** `app/config.py:27`, `.env.example:7`, `app/routes.py:30`
 - **What's wrong:** if `SECRET_KEY` is unset, as in the advertised zero-config start, the key is the public
   string `change-me`. Anyone who reads the repo can mint a valid cookie with
@@ -48,7 +74,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
   `admin123`. Leave `SECRET_KEY` empty in `.env.example`. Add a test that a cookie signed with
   `change-me` is rejected.
 
-### H-2 · README load-test numbers are from the old run
+### H-2 · README load-test numbers are from the old run — ✅ Resolved
 - **Where:** `README.md:204`
 - **What's wrong:** it says "1,433 requests, 0 failures, 5 ms average, 357 ms max". The official run (in
   `reports/perf_summary.md`, the Performance Testing PDF and the Project Documentation PDF) is **1,457
@@ -57,7 +83,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - **Fix:** update the line to the new numbers, add one line on CPU and memory, and mention
   `python tests/resource_monitor.py`.
 
-### H-3 · README phase table leaves out the main documentation PDF
+### H-3 · README phase table leaves out the main documentation PDF — ✅ Resolved
 - **Where:** `README.md:17`
 - **What's wrong:** the Phase 7 row lists only "Project Executable Files", not "FitBuddy Project
   Documentation" (the 25-page report).
@@ -76,7 +102,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 
 ## 🟠 Medium: worth fixing
 
-### M-1 · Any visitor can read or revise any user's plan (IDOR)
+### M-1 · Any visitor can read or revise any user's plan (IDOR) — 📝 Documented in README Known limitations (not fixed)
 - **Where:** `app/routes.py:142-166` (`/plan/{user_id}`, `/submit-feedback` hidden `user_id`),
   `app/routes.py:253-272` (`/update-plan/{user_id}`, `/api/users/{user_id}/plans`)
 - **What's wrong:** user IDs are sequential, and these routes don't check who is asking. **Verified:**
@@ -87,14 +113,14 @@ GitHub recalculates the language bar in the background, so it can take a few min
   user-facing URLs and the hidden form field, or at least require the admin cookie for
   `/api/users/{id}/plans`. Keep the integer `id` internally.
 
-### M-2 · An empty `ADMIN_PASSWORD` accepts an empty password
+### M-2 · An empty `ADMIN_PASSWORD` accepts an empty password — ✅ Resolved
 - **Where:** `app/config.py:26`, `app/routes.py:181`
 - **What's wrong:** if `.env` has `ADMIN_PASSWORD=` (empty), the login form accepts an empty password
   (the browser's `required` check is bypassed by any client). **Verified:** returned 303 and a session cookie.
 - **Fix:** treat an empty password as "admin disabled" (always 401), or fall back to a generated one and
   log it.
 
-### M-3 · Plan schema doesn't enforce the documented rules
+### M-3 · Plan schema doesn't enforce the documented rules — ✅ Resolved
 - **Where:** `app/schemas.py:13-41`
 - **What's wrong:** CLAUDE.md and the system prompt require days 1–7 and at least one rest day, and
   sensible sets and reps. The validator only checks `len(days) == 7`. **Verified:** a plan with seven
@@ -106,7 +132,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
   `[d.day for d in days] == [1..7]` (or renumbers them) and requires at least one `is_rest_day`.
   An invalid plan then triggers the existing retry, so this fixes it with no other code changes.
 
-### M-4 · Demo-mode revisions ignore the user's experience and age
+### M-4 · Demo-mode revisions ignore the user's experience and age — ✅ Resolved
 - **Where:** `app/demo_data.py:266`
 - **What's wrong:** "More cardio" always inserts
   `_session("cardio", ..., "medium", "intermediate", False)`. **Verified:** a 15-year-old beginner gets
@@ -115,7 +141,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - **Fix:** pass `user` (or experience, intensity and age) into `demo_revise_plan` from
   `updated_plan.py:23`, as the Gemini path already does, and use them in `_session(...)`.
 
-### M-5 · Worst-case request time is several minutes
+### M-5 · Worst-case request time is several minutes — ✅ Resolved
 - **Where:** `app/gemini_client.py:48-125`, `app/routes.py:46-54`
 - **What's wrong:** the retries multiply. `_call` retries once, `_structured_once` repeats `_call` on
   invalid JSON, `generate_structured` then tries the fallback model, and the tip call runs afterwards.
@@ -126,7 +152,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
   once it has passed. Lower the tip timeout to about 10 s, since the curated tip already serves as a
   fallback.
 
-### M-6 · Free-text goal goes into the prompt without delimiters
+### M-6 · Free-text goal goes into the prompt without delimiters — ✅ Resolved
 - **Where:** `app/gemini_generator.py:31`, `app/updated_plan.py:28`, `app/gemini_flash_generator.py:18`
 - **What's wrong:** feedback is fenced in `<feedback>` tags (README line 48), but the "Other" goal (up to
   200 characters of user text) is put straight into all three prompts. The README's "prompt-injection
@@ -134,7 +160,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - **Fix:** wrap the goal the same way (`<goal>…</goal>` with `<`/`>` replaced) and add one sentence to
   each system prompt saying to treat it as data.
 
-### M-7 · Version numbers can collide under concurrent feedback
+### M-7 · Version numbers can collide under concurrent feedback — 📝 Documented in README Known limitations (not fixed)
 - **Where:** `app/database.py:109-122`, model at `app/database.py:58-63`
 - **What's wrong:** `_next_version` reads `max(version)+1` and then inserts, and nothing makes
   `(user_id, version)` unique. Two simultaneous revisions (double-click, two tabs) can both become, for
@@ -142,7 +168,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - **Fix:** add `UniqueConstraint("user_id", "version")` to `Plan.__table_args__` and retry once on
   `IntegrityError`. The submit button is already disabled on click, which helps for the browser.
 
-### M-8 · Dependencies aren't pinned
+### M-8 · Dependencies aren't pinned — ✅ Resolved
 - **Where:** `requirements.txt:1-11`
 - **What's wrong:** all entries are `>=`. A fresh install today resolves to Starlette 1.7, which already
   warns that `httpx` TestClient support is deprecated. A future major release could break the evaluator's
@@ -156,16 +182,16 @@ GitHub recalculates the language bar in the background, so it can take a few min
 
 ## 🟢 Low: nice to have
 
-### L-1 · Unused import
+### L-1 · Unused import — ✅ Resolved
 - `app/main.py:8` – `HTMLResponse` is imported but never used. Remove it.
 
-### L-2 · Dead or unused code
+### L-2 · Dead or unused code — ✅ Resolved
 - `app/database.py:137` `get_original_plan` and `app/database.py:143` `get_plan_version` are never
   called. `get_original_plan` is a name from the brief, so keep it, but use it in `get_all_users`.
   `_render_plan` (`app/routes.py:92-101`) loads the whole history instead of calling `get_plan_version`.
 - `app/demo_data.py:156` – `_recovery_day(day, experience)` never uses `experience`.
 
-### L-3 · Missing docstrings and return type hints
+### L-3 · Missing docstrings and return type hints — ◐ Partly resolved (API endpoint docstrings)
 - `app/routes.py` has 13 public route functions with no docstring (`index`, `view_plan`,
   `api_nutrition_tip`, `api_plan_history`, `api_health`, …). For the API routes the docstring is the
   description in `/docs`, so `/nutrition-tip`, `/api/users/{id}/plans` and `/api/health` appear there
@@ -175,11 +201,11 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - **Fix:** add one-line docstrings, especially on the JSON API routes. This also helps the
   "Code-Layout, Readability and Reusability" mark.
 
-### L-4 · Long function
+### L-4 · Long function — ✅ Resolved
 - `app/demo_data.py:251` `demo_revise_plan` is 50 lines handling four rule blocks. Split it into
   `_add_cardio`, `_add_rest`, `_shorten`, `_bodyweight` helpers driven by a list of rules.
 
-### L-5 · Imports inside functions
+### L-5 · Imports inside functions — ✅ Resolved
 - `app/main.py:43`, `app/routes.py:63`, `app/routes.py:180` import inside functions (`http_exception_handler`,
   `demo_nutrition_tip`, `hmac`). The lazy `google.genai` imports in `gemini_client.py` are deliberate
   (faster start in demo mode); the others aren't. Move them to the top of the file.
@@ -198,7 +224,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - `app/database.py:154-167` loads every user's full plan list (all `plan_json`) one user at a time (N+1).
   That's fine at demo scale. Use `selectinload(User.plans)` or fetch only v1 and the latest version.
 
-### L-9 · Goal keyword matching is loose
+### L-9 · Goal keyword matching is loose — ✅ Resolved
 - `app/demo_data.py:138` – substring checks map "lean muscle" and "reduce fatigue" to *weight loss*
   (verified), and "brunch" would match *endurance* ("run"). Check "muscle" before "lean", and match
   whole words with `re.search(r"\b…\b")`.
@@ -229,7 +255,7 @@ GitHub recalculates the language bar in the background, so it can take a few min
 - **Screenshots are about 6.6 MB of PNG.** Optional: convert them to compressed PNG or WebP for a faster
   README.
 
-### L-13 · Test gaps
+### L-13 · Test gaps — ◐ Partly resolved (tests for the fixed items)
 The suite is solid (35 tests, including mocked-Gemini cases). Tests to add along with the fixes above:
 forged cookie with the default key (H-1), empty admin password (M-2), schema rejecting bad plans (M-3),
 demo revision respecting experience and age (M-4), duplicate versions (M-7), and an HTML 422 page (L-6).
@@ -251,7 +277,7 @@ demo revision respecting experience and age (M-4), duplicate versions (M-7), and
 
 ---
 
-## Summary
+## Summary (pre-fix snapshot; see Resolution status at the top for the current state)
 
 The app is in good shape. The tests pass (35/35), a fresh clone installs and runs with zero config, no
 secrets were ever committed, and the phase documents agree with the code.

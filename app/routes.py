@@ -3,6 +3,7 @@
 Routes that call Gemini are plain `def` so FastAPI runs them in a threadpool and the sync
 SDK calls never block the event loop.
 """
+import hmac
 import logging
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import ValidationError
 
 from app import config, database as db
+from app.demo_data import demo_nutrition_tip
 from app.gemini_client import GeminiError
 from app.gemini_flash_generator import generate_nutrition_tip_with_flash
 from app.gemini_generator import generate_workout_gemini
@@ -29,6 +31,7 @@ ADMIN_COOKIE = "fitbuddy_admin"
 ADMIN_MAX_AGE = 8 * 3600
 _signer = URLSafeTimedSerializer(config.SECRET_KEY, salt="fitbuddy-admin")
 
+ADMIN_DISABLED_MSG = "Admin access is disabled: set ADMIN_PASSWORD in .env."
 AI_ERROR_MSG = ("Sorry, our AI coach couldn't create your plan right now. "
                 "Please try again in a moment.")
 
@@ -60,7 +63,6 @@ def _tip_or_fallback(goal: str, age: Optional[int]) -> str:
         return generate_nutrition_tip_with_flash(goal, age)[0]
     except GeminiError as exc:
         log.warning("Tip generation failed (%s); using curated tip", exc)
-        from app.demo_data import demo_nutrition_tip
         return demo_nutrition_tip(goal, age)
 
 
@@ -74,9 +76,13 @@ def _revise(user_id: int, feedback: str) -> tuple[int, dict]:
     return version, revised
 
 
+def _admin_enabled() -> bool:
+    return bool(config.ADMIN_PASSWORD.strip())
+
+
 def is_admin(request: Request) -> bool:
     token = request.cookies.get(ADMIN_COOKIE)
-    if not token:
+    if not token or not _admin_enabled():  # an empty password disables admin entirely
         return False
     try:
         return _signer.loads(token, max_age=ADMIN_MAX_AGE) == "admin"
@@ -177,7 +183,9 @@ def admin_login_page(request: Request):
 
 @router.post("/admin/login", response_class=HTMLResponse, include_in_schema=False)
 def admin_login(request: Request, password: str = Form("")):
-    import hmac
+    if not _admin_enabled():
+        return templates.TemplateResponse(request, "admin_login.html",
+                                          {"error": ADMIN_DISABLED_MSG}, status_code=401)
     if not hmac.compare_digest(password.encode(), config.ADMIN_PASSWORD.encode()):
         return templates.TemplateResponse(request, "admin_login.html",
                                           {"error": "Incorrect password."}, status_code=401)
@@ -228,6 +236,7 @@ def api_generate_workout(body: QuickWorkoutRequest):
 
 @router.get("/nutrition-tip", tags=["API"])
 def api_nutrition_tip(goal: str, age: Optional[int] = None):
+    """Get a short nutrition/recovery tip for a goal (optionally age-aware)."""
     goal = goal.strip()
     if not goal or len(goal) > 200:
         raise HTTPException(422, "goal must be 1–200 characters")
@@ -262,6 +271,7 @@ def api_update_plan(user_id: int, body: FeedbackRequest):
 
 @router.get("/api/users/{user_id}/plans", tags=["API"])
 def api_plan_history(user_id: int):
+    """Get a user's details and every plan version (v1 = original)."""
     user = db.get_user(user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -274,6 +284,7 @@ def api_plan_history(user_id: int):
 
 @router.get("/api/health", tags=["API"])
 def api_health():
+    """Report app, database and Gemini configuration status."""
     return {
         "status": "ok",
         "db": "ok" if db.db_ok() else "error",

@@ -130,20 +130,72 @@ TIPS = {
 }
 
 
+LEVELS = ("beginner", "intermediate", "advanced")
+
+TEEN_NOTE = "Focus on technique over heavy weights; train under supervision when using equipment."
+SENIOR_NOTE = ("Prioritise balance and controlled movements; check with your doctor before "
+               "increasing intensity.")
+
+# 60+: cardio/HIIT come from the beginner (low-impact) library so no jumps, sprints or runs.
+LOW_IMPACT_KINDS = ("cardio", "hiit")
+
+# Genuinely equipment-free swaps for "no equipment" feedback. No jumping moves, so they are
+# safe for every age group.
+BODYWEIGHT = {
+    "beginner": [("Bodyweight Squats", "Knees track over toes"),
+                 ("Wall Push-Ups", "Body in one straight line"),
+                 ("Glute Bridges", "Drive through heels"),
+                 ("Bird-Dog", "Move slowly, keep hips level"),
+                 ("Standing Calf Raises", "Pause at the top")],
+    "intermediate": [("Bodyweight Squats", "Knees track over toes"),
+                     ("Push-Ups", "Elbows at ~45 degrees"),
+                     ("Reverse Lunges", "Step back softly"),
+                     ("Glute Bridges", "Drive through heels"),
+                     ("Superman Hold", "Lift chest and legs together, neck neutral")],
+    "advanced": [("Bulgarian Split Squats", "Rear foot on a chair or step, stay tall"),
+                 ("Decline Push-Ups", "Feet on a chair, body in one line"),
+                 ("Walking Lunges", "Front knee over ankle"),
+                 ("Single-Leg Glute Bridges", "Keep hips level"),
+                 ("Pike Push-Ups", "Hips high, lower head between hands")],
+}
+BODYWEIGHT_CARDIO = [("Brisk Walking", "Steady conversational pace"),
+                     ("Marching in Place", "Lift knees to hip height, swing arms")]
+# Exercise names that need gear; replaced by the "no equipment" rule.
+EQUIPMENT = re.compile(r"\b(machine|barbell|dumbbell|kettlebell|band|bike|rows?|rowing|pulldown|"
+                       r"ropes?|weighted|box|wheel|hanging|pull-ups?|dips|press|deadlift|"
+                       r"goblet|curls?|thrusts?)\b", re.I)
+
+
 def _goal_key(goal: str) -> str:
     g = (goal or "").lower()
     for key in SCHEDULES:
         if key in g:
             return key
-    if any(w in g for w in ("lose", "fat", "slim", "lean")):
-        return "weight loss"
-    if any(w in g for w in ("muscle", "strength", "bulk", "strong")):
+
+    def has(pattern: str) -> bool:  # whole-word match, so "fatigue" isn't "fat"
+        return re.search(rf"\b({pattern})\b", g) is not None
+
+    # "muscle" is checked before "lean" so "lean muscle" means muscle gain.
+    if has(r"muscles?|strength|stronger|strong|bulk(ing)?"):
         return "muscle gain"
-    if any(w in g for w in ("run", "marathon", "stamina", "cardio")):
+    if has(r"lose|losing|fat|slim|lean"):
+        return "weight loss"
+    if has(r"run|running|runner|marathons?|stamina|cardio"):
         return "endurance"
-    if any(w in g for w in ("stretch", "yoga", "mobility")):
+    if has(r"stretch(ing)?|yoga|mobility|flexible"):
         return "flexibility"
     return "general fitness"
+
+
+def _profile(experience: str | None, age: int | None, intensity: str | None) -> dict:
+    """Normalise the user inputs that drive safety rules (shared by generation and revision)."""
+    experience = experience if experience in LEVELS else "beginner"
+    intensity = intensity if intensity in VOLUME else "medium"
+    teen = age is not None and age < 18
+    if teen and experience == "advanced":
+        experience = "intermediate"
+    return {"experience": experience, "intensity": intensity, "teen": teen,
+            "senior": age is not None and age >= 60}
 
 
 def _rest_day(day: int) -> dict:
@@ -153,7 +205,7 @@ def _rest_day(day: int) -> dict:
             "cooldown": "Gentle full-body stretching and focus on hydration and sleep."}
 
 
-def _recovery_day(day: int, experience: str) -> dict:
+def _recovery_day(day: int) -> dict:
     return {"day": day, "focus": FOCUS["recovery"], "is_rest_day": True,
             "warmup": "5 minutes of easy walking.",
             "exercises": [
@@ -165,15 +217,17 @@ def _recovery_day(day: int, experience: str) -> dict:
             "cooldown": "5 minutes of deep breathing and gentle stretches."}
 
 
-def _session(kind: str, day: int, intensity: str, experience: str, teen: bool) -> dict:
+def _session(kind: str, day: int, p: dict) -> dict:
     if kind == "rest":
         return _rest_day(day)
     if kind == "recovery":
-        return _recovery_day(day, experience)
+        return _recovery_day(day)
 
-    moves = LIBRARY[kind][experience]
+    experience, intensity = p["experience"], p["intensity"]
+    level = "beginner" if p["senior"] and kind in LOW_IMPACT_KINDS else experience
+    moves = LIBRARY[kind][level]
     sets, reps, rest = VOLUME[intensity]
-    if teen:  # age-appropriate: no heavy max lifts, moderate rep ranges
+    if p["teen"]:  # age-appropriate: no heavy max lifts, moderate rep ranges
         sets, reps = min(sets, 3), "10–15"
     exercises = []
     for name, cue in moves:
@@ -206,29 +260,29 @@ def _session(kind: str, day: int, intensity: str, experience: str, teen: bool) -
             "cooldown": "5–10 minutes of walking and static stretching for the muscles worked."}
 
 
+def _add_age_notes(safety: list, p: dict) -> list:
+    """Append the teen / 60+ safety notes if they apply and aren't already there."""
+    for needed, note in ((p["teen"], TEEN_NOTE), (p["senior"], SENIOR_NOTE)):
+        if needed and note not in safety:
+            safety.append(note)
+    return safety
+
+
 def demo_workout_plan(goal: str, intensity: str, experience: str = "beginner",
                       age: int | None = None, weight: float | None = None) -> dict:
     key = _goal_key(goal)
-    intensity = intensity if intensity in VOLUME else "medium"
-    experience = experience if experience in ("beginner", "intermediate", "advanced") else "beginner"
-    teen = age is not None and age < 18
-    if teen and experience == "advanced":
-        experience = "intermediate"
-    days = [_session(kind, i + 1, intensity, experience, teen)
-            for i, kind in enumerate(SCHEDULES[key])]
+    p = _profile(experience, age, intensity)
+    experience, intensity = p["experience"], p["intensity"]
+    days = [_session(kind, i + 1, p) for i, kind in enumerate(SCHEDULES[key])]
 
     who = f"{experience} level"
     if age:
         who += f", age {age}"
-    safety = [
+    safety = _add_age_notes([
         "Stop any exercise that causes sharp pain, dizziness or chest discomfort.",
         "Warm up before every session and progress load gradually.",
         "Stay hydrated before, during and after training.",
-    ]
-    if teen:
-        safety.append("Focus on technique over heavy weights; train under supervision when using equipment.")
-    if age and age >= 60:
-        safety.append("Prioritise balance and controlled movements; check with your doctor before increasing intensity.")
+    ], p)
     if weight and weight >= 110:
         safety.append("Favour low-impact options (bike, rower, swimming) to protect your joints.")
 
@@ -248,49 +302,85 @@ def demo_nutrition_tip(goal: str, age: int | None = None) -> str:
     return tip
 
 
-def demo_revise_plan(plan: dict, feedback: str) -> dict:
-    """Very simple keyword-driven revision of the latest plan."""
+# ---------- Revision rules: each takes (days, p) and returns a change description or None ----------
+
+def _training_idx(days: list) -> list:
+    return [i for i, d in enumerate(days) if not d["is_rest_day"]]
+
+
+def _more_cardio(days: list, p: dict) -> str | None:
+    strength = [i for i in _training_idx(days)
+                if "Strength" in days[i]["focus"] or "Core" in days[i]["focus"]]
+    if not strength:
+        return None
+    i = strength[-1]
+    days[i] = _session("cardio", i + 1, p)
+    return f"swapped day {i + 1} for cardio"
+
+
+def _more_rest(days: list, p: dict) -> str | None:
+    # Only ever turns a training day into a rest day, so existing rest days are never removed.
+    trains = _training_idx(days)
+    if len(trains) <= 3:
+        return None
+    i = trains[len(trains) // 2]
+    days[i] = _rest_day(i + 1)
+    return f"made day {i + 1} a rest day"
+
+
+def _shorter(days: list, p: dict) -> str:
+    for d in days:
+        if d["exercises"] and not d["is_rest_day"]:
+            d["exercises"] = d["exercises"][:3]
+            for ex in d["exercises"]:
+                if ex.get("sets") and ex["sets"] > 2:
+                    ex["sets"] -= 1
+    return "shortened workouts"
+
+
+def _bodyweight(days: list, p: dict) -> str:
+    strength_moves = BODYWEIGHT[p["experience"]]
+    for d in days:
+        if d["is_rest_day"]:
+            continue
+        pool = BODYWEIGHT_CARDIO if d["focus"] == FOCUS["cardio"] else strength_moves
+        used = {ex["name"] for ex in d["exercises"]}
+        for ex in d["exercises"]:
+            if EQUIPMENT.search(ex["name"]):
+                name, cue = next((m for m in pool if m[0] not in used), pool[0])
+                used.add(name)
+                ex["name"], ex["notes"] = name, cue
+        d["focus"] = d["focus"].replace("Strength", "Bodyweight")
+    return "switched to bodyweight exercises"
+
+
+REVISION_RULES = [
+    (lambda fb: "cardio" in fb, _more_cardio),
+    (lambda fb: re.search(r"\brest\b|recover|tired|sore", fb), _more_rest),
+    (lambda fb: any(w in fb for w in ("short", "less time", "quick", "busy")), _shorter),
+    (lambda fb: any(w in fb for w in ("no equipment", "home", "bodyweight", "no gym")), _bodyweight),
+]
+
+
+def demo_revise_plan(plan: dict, feedback: str, *, experience: str | None = None,
+                     age: int | None = None, intensity: str | None = None) -> dict:
+    """Simple keyword-driven revision of the latest plan, using the same safety profile as
+    generation (experience level, intensity, teen and 60+ rules)."""
+    p = _profile(experience, age, intensity)
     new = copy.deepcopy(plan)
     fb = (feedback or "").lower()
     days = new["days"]
-    changes = []
+    changes = [c for match, rule in REVISION_RULES if match(fb) and (c := rule(days, p))]
 
-    def training_idx():
-        return [i for i, d in enumerate(days) if not d["is_rest_day"]]
-
-    if "cardio" in fb:
-        strength = [i for i in training_idx()
-                    if "Strength" in days[i]["focus"] or "Core" in days[i]["focus"]]
-        if strength:
-            i = strength[-1]
-            days[i] = _session("cardio", i + 1, "medium", "intermediate", False)
-            changes.append(f"swapped day {i + 1} for cardio")
-
-    if re.search(r"\brest\b|recover|tired|sore", fb):
-        trains = training_idx()
-        if len(trains) > 3:
-            i = trains[len(trains) // 2]
-            days[i] = _rest_day(i + 1)
-            changes.append(f"made day {i + 1} a rest day")
-
-    if any(w in fb for w in ("short", "less time", "quick", "busy")):
+    if p["teen"]:  # cap volume on anything carried over from the previous version
         for d in days:
-            if d["exercises"] and not d["is_rest_day"]:
-                d["exercises"] = d["exercises"][:3]
-                for ex in d["exercises"]:
-                    if ex.get("sets") and ex["sets"] > 2:
-                        ex["sets"] -= 1
-        changes.append("shortened workouts")
-
-    if any(w in fb for w in ("no equipment", "home", "bodyweight", "no gym")):
-        swap = LIBRARY["full"]["beginner"] + LIBRARY["lower"]["beginner"][:2]
-        for d in days:
-            if d["exercises"] and "Strength" in d["focus"]:
-                for j, ex in enumerate(d["exercises"]):
-                    name, cue = swap[j % len(swap)]
-                    ex["name"], ex["notes"] = name, cue
-                d["focus"] = d["focus"].replace("Strength", "Bodyweight")
-        changes.append("switched to bodyweight exercises")
+            for ex in d["exercises"]:
+                if ex.get("sets") and ex["sets"] > 3:
+                    ex["sets"] = 3
+    if not any(d["is_rest_day"] for d in days):  # guard: always keep one rest day
+        days[-1] = _rest_day(len(days))
+        changes.append(f"made day {len(days)} a rest day")
+    new["safety_notes"] = _add_age_notes(list(new.get("safety_notes") or []), p)
 
     if not changes:
         changes.append("kept the structure and added a note")

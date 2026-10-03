@@ -1,8 +1,8 @@
-# 💪 FitBuddy – AI Fitness Plan Generator using Gemini Models
+# 💪 FitBuddy - AI Fitness Plan Generator using Gemini Models
 
-**Team ID: 4 — Sharukesh A, Sriram T.G, Mohan S, Jaitheerth**
+**Team ID: 4 - Sharukesh A, Sriram T.G, Mohan S, Jaitheerth**
 
-SmartInternz · Google Cloud Generative AI track
+SmartInternz, Google Cloud Generative AI track
 
 ## Project phases
 
@@ -26,8 +26,6 @@ FitBuddy is a FastAPI web app that generates a **personalized 7-day workout plan
 **nutrition/recovery tip** with Google Gemini, lets users **revise the plan with feedback**
 while keeping the full version history, and gives admins a dashboard to review and delete users.
 
-> SmartInternz · Google Cloud Generative AI track project.
-
 ![Result page](screenshots/03_result.png)
 
 ---
@@ -36,23 +34,23 @@ while keeping the full version history, and gives admins a dashboard to review a
 
 | Scenario | What it does |
 |---|---|
-| **1. Generate plan** | Enter name, age, weight, goal, intensity and experience to get a structured 7-day plan. Each day has a focus, a warm-up, exercises (sets × reps, rest, form cue) and a cooldown, plus safety notes. |
-| **2. Feedback revision** | Feedback such as "more cardio" or "add rest days" revises the **latest** version. Every version is kept (v1, v2, …), and older versions can be viewed. |
+| **1. Generate plan** | Enter name, age, weight, goal, intensity and experience to get a structured 7-day plan. Each day has a focus, a warm-up, exercises (sets x reps, rest, form cue) and a cooldown, plus safety notes. |
+| **2. Feedback revision** | Feedback such as "more cardio" or "add rest days" revises the **latest** version. Every version is kept (v1, v2, ...), and older versions can be viewed. |
 | **3. Nutrition/recovery tip** | A short goal-based tip from a lighter Gemini model, shown under the plan and available at `GET /nutrition-tip`. |
 | **4. Admin dashboard** | Password-protected list of all users with their original and latest plans side by side, and delete. |
 
 Also included:
-- **Structured JSON output:** Gemini returns JSON that matches a Pydantic schema, and the app validates it before rendering cards. Raw markdown is never shown.
+- **Structured JSON output:** Gemini returns JSON that matches a Pydantic schema, and the app validates it before rendering cards. Raw markdown is not shown.
 - **Personalized prompts:** age, weight, goal, intensity and experience all go into the prompt, with extra safety rules for teens, older adults and heavier users.
-- **Safe failures:** AI errors show a friendly message (HTTP 502), and error text is never saved as a plan.
+- **Safe failures:** AI errors show a friendly message (HTTP 502), and error text is not saved as a plan.
 - **Prompt-injection hardening:** feedback and the free-text goal are wrapped in delimiters with angle brackets neutralized and treated as data, not instructions. Feedback is capped at 500 characters.
 - **Demo mode:** with no API key, the app runs fully on deterministic built-in plans and shows a "Demo mode" badge.
 - **Responsive, printable UI:** Jinja2 templates with a gym background, Roboto font and print CSS ("Print plan").
 
 ## Tech stack
 
-Python 3.11+ · FastAPI · Uvicorn · Jinja2 · SQLite + SQLAlchemy 2.x · Google Gemini via the
-`google-genai` SDK · pytest · Locust
+Python 3.11+, FastAPI, Uvicorn, Jinja2, SQLite + SQLAlchemy 2.x, Google Gemini via the
+`google-genai` SDK, pytest, Locust
 
 | Role | Env var | Default model |
 |---|---|---|
@@ -72,7 +70,7 @@ flowchart LR
       R[routes.py] --> G1[gemini_generator.py<br/>generate_workout_gemini]
       R --> G2[gemini_flash_generator.py<br/>generate_nutrition_tip_with_flash]
       R --> G3[updated_plan.py<br/>update_workout_plan]
-      G1 & G2 & G3 --> GC[gemini_client.py<br/>shared client · retries · fallback model · JSON validation]
+      G1 & G2 & G3 --> GC[gemini_client.py<br/>shared client, retries, fallback model, JSON validation]
       G1 & G2 & G3 -.no API key.-> D[demo_data.py<br/>deterministic fallback]
       R --> DB[database.py<br/>SQLAlchemy CRUD]
     end
@@ -80,8 +78,8 @@ flowchart LR
     DB --> S[(SQLite<br/>fitbuddy.db)]
 ```
 
-**Request flow for "Generate plan":** validate the form (Pydantic) → generate the plan (workout
-model, structured JSON) and the tip (tip model) → only on success, save the user and plan v1 →
+**Request flow for "Generate plan":** validate the form (Pydantic), then generate the plan (workout
+model, structured JSON) and the tip (tip model), then, only on success, save the user and plan v1 and
 redirect to `/plan/{user_id}`.
 
 ## Data model
@@ -107,6 +105,7 @@ erDiagram
         text feedback "null for v1"
         text nutrition_tip
         text source "gemini|demo"
+        text tip_source "gemini|demo|fallback"
         datetime created_at
     }
 ```
@@ -151,7 +150,12 @@ Get a key at <https://aistudio.google.com/apikey>.
 | `ADMIN_PASSWORD` | `admin123` | Admin dashboard password (**change this**; a warning is logged while it is `admin123`, and empty disables admin) |
 | `SECRET_KEY` | *(empty)* | Signs the admin session cookie. If empty or `change-me`, a random key is generated at startup (admin sessions reset on restart) |
 | `DATABASE_URL` | `sqlite:///./fitbuddy.db` | SQLAlchemy database URL |
-| `GEMINI_TIMEOUT_SECONDS` | `45` | Timeout for each Gemini call |
+| `GEMINI_TIMEOUT_SECONDS` | `45` | Timeout for each Gemini call (also capped by the request time budget below) |
+
+**Request time budget.** `GEMINI_TIMEOUT_SECONDS` (45 s) is the timeout for a single Gemini call.
+Plan generation and revision, including the one retry, one extra attempt for an invalid plan and the fallback model, share a total budget
+of about 50 s. The nutrition tip has a budget of about 10 s with no retry; if it fails, a built-in tip is
+used instead. A form submit therefore takes at most about 60 s.
 
 ---
 
@@ -180,24 +184,25 @@ Get a key at <https://aistudio.google.com/apikey>.
 | GET | `/api/users/{user_id}/plans` | | User info and full version history |
 | GET | `/api/health` | | `{status, db, gemini_configured, demo_mode, models}` |
 
-Status codes: `422` validation error · `404` not found · `502` AI failure · `401` admin required.
+Status codes: `422` validation error, `404` not found, `502` AI failure, `401` admin required.
 
 ---
 
 ## Testing
 
 ```bash
-pytest -q                     # 245 tests, demo mode, temporary DB
+pytest -q                     # 86 test functions (120 cases), demo mode, temporary DB
 ```
 The tests cover the home page, generation and redirect to a 7-day plan, feedback creating v2
 while keeping v1, revisions building on the latest version, validation (422), the admin
 login, delete and cascade, every JSON endpoint, health and `/docs`. A mocked Gemini transport
 also checks that age and weight reach the prompt, that feedback and the goal are delimited, that failures
-never save error text, that invalid model JSON or plans breaking the rules (days 1–7, a rest day,
-positive sets/rest) are rejected, and that retries and fallback stay within a ~60 s time budget.
-`test_security.py` covers the admin key and disabled-admin cases, and `test_demo_safety.py` checks
-that demo plans and revisions follow the experience and age (13–17, 60+) safety rules for every
-goal, intensity and experience combination.
+do not save error text, that invalid model JSON or plans breaking the rules (days 1-7, a rest day,
+positive sets/rest) are rejected, that real SDK errors (404, 401/403, 429, 503, timeouts) are
+handled, and that retries and fallback stay within the time budget. `test_security.py` covers the
+admin key and disabled-admin cases. `test_demo_safety.py` checks demo plans and revisions for a few
+representative users (a teen beginner, a 65-year-old, a 120 kg lifter, an intermediate adult):
+age and weight rules, injury and negated feedback, no-equipment swaps and sensible units.
 
 ### Load test (Locust)
 ```bash
@@ -206,8 +211,8 @@ locust -f tests/locustfile.py --headless -u 50 -r 10 -t 60s \
   --host http://127.0.0.1:8000 --csv reports/perf --html reports/perf.html   # terminal 2
 ```
 Result (50 users, 60 s, demo mode): **1,457 requests, 0 failures, 5.4 ms average, 3 ms median, 77 ms max, 24.5 req/s.**
-Server resource usage (launcher + server combined): CPU 4.2% average / 13.9% peak of one core (0.53% / 1.74% of the
-8-core system), memory about 81 MB (about 1% of RAM). `python tests/resource_monitor.py` runs the same load test
+Server resource usage (launcher + server combined): CPU 4.2% average, 13.9% peak of one core (0.53% and 1.74% of the
+8-core system), memory about 81 MB (about 1% of RAM). `python scripts/resource_monitor.py` runs the same load test
 while sampling CPU and memory into `reports/resource_usage.csv`.
 All targets met (average < 2 s, max < 5 s, errors < 1%). See `reports/perf_summary.md` and `reports/perf.html`.
 The real-Gemini timing runs (plan, revision and tip latency, and the 503 fallback) are recorded in the same file.
@@ -242,17 +247,18 @@ FitBuddy/
 │   ├── templates/                 # base, index, result, _plan, all_users, admin_login, error
 │   └── static/                    # css/style.css, images/gym-bg.jpg
 ├── tests/                         # test_routes.py, test_security.py, test_ai_hardening.py,
-│                                  # test_demo_safety.py, conftest.py, locustfile.py, resource_monitor.py
+│                                  # test_demo_safety.py, conftest.py, locustfile.py
+├── scripts/                       # resource_monitor.py (load test + CPU/memory sampling)
 ├── reports/                       # Locust results
 ├── screenshots/
-├── .env.example · .gitattributes · requirements.txt · pytest.ini · README.md
+├── .env.example, .gitattributes, requirements.txt, pytest.ini, README.md
 ```
 
 ## Known limitations
 
 - Real Gemini latency (measured 2026-10-03, see `reports/perf_summary.md`): a plan takes about 14 s on
   `gemini-3.8-flash` and about 5 s on `gemini-3.5-flash-lite`, and a tip about 1 s. When the primary model
-  is overloaded (503), the fallback path takes 17–20 s end to end.
+  is overloaded (503), the fallback path takes 17-20 s end to end.
 - Plan generation with a real model takes several seconds, and requests are synchronous (no streaming or background jobs).
 - User IDs are sequential integers and there are no end-user accounts, so anyone who knows or guesses a
   plan URL or user id (`/plan/{id}`, `/api/users/{id}/plans`, `/update-plan/{id}`) can view or revise that
@@ -261,7 +267,7 @@ FitBuddy/
   version number (there is no unique constraint on `user_id` + `version`).
 - Admin auth is a single shared password with a signed cookie, with no CSRF tokens or rate limiting. That is fine for a demo, not for production.
 - SQLite with a single Uvicorn worker. Use Postgres and multiple workers to scale.
-- Demo-mode revisions are simple keyword rules ("cardio", "rest", "short", "no equipment").
+- Demo-mode revisions are simple keyword rules (cardio, rest, shorter, no equipment, yoga, less jumping, injury or pain, more training). Feedback that matches no rule leaves the plan unchanged and says so.
 - FitBuddy gives general fitness information, **not medical advice**.
 
 ## Credits

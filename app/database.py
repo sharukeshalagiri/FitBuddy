@@ -1,14 +1,14 @@
 """SQLite + SQLAlchemy 2.x: engine, session factory, ORM models and CRUD helpers."""
 import json
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import (DateTime, Float, ForeignKey, Integer, String, Text, create_engine,
-                        event, func, select)
+                        event, func, inspect, select, text)
 from sqlalchemy.orm import (DeclarativeBase, Mapped, mapped_column, relationship,
                             sessionmaker)
 
 from app import config
+from app.schemas import MAX_GOAL_LENGTH, MAX_NAME_LENGTH
 
 
 def _utcnow() -> datetime:
@@ -41,16 +41,16 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(MAX_NAME_LENGTH), nullable=False)
     age: Mapped[int] = mapped_column(Integer, nullable=False)
     weight_kg: Mapped[float] = mapped_column(Float, nullable=False)
-    goal: Mapped[str] = mapped_column(String(200), nullable=False)
+    goal: Mapped[str] = mapped_column(String(MAX_GOAL_LENGTH), nullable=False)
     intensity: Mapped[str] = mapped_column(String(10), nullable=False)
     experience: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     plans: Mapped[list["Plan"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan", passive_deletes=True,
+        cascade="all, delete-orphan", passive_deletes=True,
         order_by="Plan.version",
     )
 
@@ -62,12 +62,11 @@ class Plan(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     plan_json: Mapped[str] = mapped_column(Text, nullable=False)
-    feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    nutrition_tip: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nutrition_tip: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(10), nullable=False, default="demo")
+    tip_source: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
-
-    user: Mapped[User] = relationship(back_populates="plans")
 
     @property
     def plan(self) -> dict:
@@ -80,12 +79,24 @@ class Plan(Base):
             "feedback": self.feedback,
             "nutrition_tip": self.nutrition_tip,
             "source": self.source,
+            "tip_source": self.tip_source,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
+def add_missing_columns(eng) -> None:
+    """create_all() never alters existing tables, so add columns newer than old DB files."""
+    if eng.dialect.name != "sqlite":
+        return
+    columns = {c["name"] for c in inspect(eng).get_columns("plans")}
+    if "tip_source" not in columns:
+        with eng.begin() as conn:
+            conn.execute(text("ALTER TABLE plans ADD COLUMN tip_source VARCHAR(10)"))
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    add_missing_columns(engine)
 
 
 # ---------------------------- CRUD helpers ----------------------------
@@ -101,7 +112,7 @@ def save_user(name: str, age: int, weight_kg: float, goal: str, intensity: str,
         return user.id
 
 
-def get_user(user_id: int) -> Optional[User]:
+def get_user(user_id: int) -> User | None:
     with SessionLocal() as db:
         return db.get(User, user_id)
 
@@ -111,30 +122,32 @@ def _next_version(db, user_id: int) -> int:
     return (current or 0) + 1
 
 
-def save_plan(user_id: int, plan: dict, nutrition_tip: Optional[str], source: str,
-              feedback: Optional[str] = None) -> int:
+def save_plan(user_id: int, plan: dict, nutrition_tip: str | None, source: str,
+              feedback: str | None = None, tip_source: str | None = None) -> int:
     """Insert a plan row at the next version number; returns the version."""
     with SessionLocal() as db:
         version = _next_version(db, user_id)
         db.add(Plan(user_id=user_id, version=version, plan_json=json.dumps(plan),
-                    feedback=feedback, nutrition_tip=nutrition_tip, source=source))
+                    feedback=feedback, nutrition_tip=nutrition_tip, source=source,
+                    tip_source=tip_source))
         db.commit()
         return version
 
 
-def update_plan(user_id: int, plan: dict, feedback: str, nutrition_tip: Optional[str],
-                source: str) -> int:
+def update_plan(user_id: int, plan: dict, feedback: str, nutrition_tip: str | None,
+                source: str, tip_source: str | None = None) -> int:
     """Revisions never overwrite: a NEW version row is inserted."""
-    return save_plan(user_id, plan, nutrition_tip, source, feedback=feedback)
+    return save_plan(user_id, plan, nutrition_tip, source, feedback=feedback,
+                     tip_source=tip_source)
 
 
-def get_latest_plan(user_id: int) -> Optional[Plan]:
+def get_latest_plan(user_id: int) -> Plan | None:
     with SessionLocal() as db:
         return db.scalar(select(Plan).where(Plan.user_id == user_id)
                          .order_by(Plan.version.desc()).limit(1))
 
 
-def get_original_plan(user_id: int) -> Optional[Plan]:
+def get_original_plan(user_id: int) -> Plan | None:
     with SessionLocal() as db:
         return db.scalar(select(Plan).where(Plan.user_id == user_id)
                          .order_by(Plan.version.asc()).limit(1))

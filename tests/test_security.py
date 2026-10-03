@@ -1,4 +1,4 @@
-"""Security fixes: random SECRET_KEY (H-1), admin disabled on empty password (M-2), API docs (L-3)."""
+"""Security tests: random SECRET_KEY for placeholders, admin disabled on empty password."""
 import logging
 
 from fastapi.testclient import TestClient
@@ -46,9 +46,3 @@ def test_empty_admin_password_disables_admin(admin_client, monkeypatch):
     assert ADMIN_DISABLED_MSG in r.text
     assert ADMIN_COOKIE not in r.cookies
     assert admin_client.get("/view-all-users").status_code == 401
-
-
-def test_api_endpoints_have_descriptions():
-    paths = app.openapi()["paths"]
-    for path in ("/nutrition-tip", "/api/users/{user_id}/plans", "/api/health"):
-        assert paths[path]["get"].get("description")

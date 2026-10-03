@@ -76,7 +76,9 @@ def test_feedback_creates_v2_and_keeps_v1(client):
     assert [p.version for p in history] == [1, 2]
     assert history[0].plan == original and history[0].feedback is None
     assert history[1].feedback == "More cardio please"
-    assert history[1].plan != original
+    # FORM is a muscle-gain plan: "More cardio" must turn a training day into a cardio day.
+    cardio_days = lambda p: sum("Cardio" in d["focus"] for d in p["days"])  # noqa: E731
+    assert cardio_days(history[1].plan) > cardio_days(original)
 
 
 def test_feedback_revises_latest_version(client):
@@ -179,6 +181,13 @@ def test_api_nutrition_tip(client):
     assert client.get("/nutrition-tip").status_code == 422
 
 
+@pytest.mark.parametrize("params", [{"goal": ""}, {"goal": "   "}, {"goal": "x" * 201},
+                                    {"goal": "endurance", "age": 12},
+                                    {"goal": "endurance", "age": 91}])
+def test_api_nutrition_tip_validation(client, params):
+    assert client.get("/nutrition-tip", params=params).status_code == 422
+
+
 def test_api_generate_plan_and_update_and_history(client):
     r = client.post("/generate-plan", json=API_USER)
     assert r.status_code == 200
@@ -223,6 +232,56 @@ def test_docs_available(client):
         assert p in paths
 
 
+# ----------------------------- Tip source -----------------------------
+
+def test_tip_source_demo_and_kept_on_revision(client):
+    user_id = create_via_form(client)
+    client.post("/submit-feedback", data={"user_id": user_id, "feedback": "more cardio"})
+    history = database.get_plan_history(user_id)
+    assert [p.tip_source for p in history] == ["demo", "demo"]
+    assert history[1].nutrition_tip == history[0].nutrition_tip
+    plans = client.get(f"/api/users/{user_id}/plans").json()["plans"]
+    assert [p["tip_source"] for p in plans] == ["demo", "demo"]
+
+
+def test_tip_source_fallback_when_tip_model_fails(client, monkeypatch):
+    from app import routes
+    from app.demo_data import demo_nutrition_tip, demo_workout_plan
+
+    def tip_fails(goal, age=None):
+        raise GeminiError("tip model down", "api")
+
+    monkeypatch.setattr(routes, "generate_workout_gemini",
+                        lambda *a, **k: (demo_workout_plan("muscle gain", "medium"), "gemini",
+                                         config.GEMINI_WORKOUT_MODEL))
+    monkeypatch.setattr(routes, "generate_nutrition_tip_with_flash", tip_fails)
+    user_id = create_via_form(client)
+    v1 = database.get_latest_plan(user_id)
+    assert v1.source == "gemini" and v1.tip_source == "fallback"
+    assert v1.nutrition_tip == demo_nutrition_tip("muscle gain", 30)
+
+    client.post("/submit-feedback", data={"user_id": user_id, "feedback": "more cardio"})
+    assert database.get_latest_plan(user_id).tip_source == "fallback"
+
+
+def test_migration_adds_tip_source_column(tmp_path):
+    from sqlalchemy import inspect, text
+
+    eng = database.make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE plans (id INTEGER PRIMARY KEY, user_id INTEGER, "
+                          "version INTEGER, plan_json TEXT, feedback TEXT, nutrition_tip TEXT, "
+                          "source VARCHAR(10), created_at DATETIME)"))
+        conn.execute(text("INSERT INTO plans (user_id, version, plan_json, source) "
+                          "VALUES (1, 1, '{}', 'demo')"))
+    database.add_missing_columns(eng)
+    database.add_missing_columns(eng)  # running again is a no-op
+    assert "tip_source" in {c["name"] for c in inspect(eng).get_columns("plans")}
+    with eng.connect() as conn:
+        assert conn.execute(text("SELECT source, tip_source FROM plans")).one() == ("demo", None)
+    eng.dispose()
+
+
 # ----------------------------- Gemini path (mocked) -----------------------------
 
 @pytest.fixture()
@@ -231,7 +290,7 @@ def gemini_mode(monkeypatch):
     from app.demo_data import demo_workout_plan
     calls = []
 
-    def fake_call(model, contents, gen_config, retries=1):
+    def fake_call(model, contents, gen_config, deadline=None):
         calls.append({"model": model, "contents": contents,
                       "system": gen_config.system_instruction})
         if gen_config.response_mime_type == "application/json":
@@ -253,7 +312,7 @@ def test_gemini_prompt_uses_age_weight_experience(client, gemini_mode):
     tip_call = next(c for c in gemini_mode if c["model"] == config.GEMINI_TIP_MODEL)
     assert "muscle gain" in tip_call["contents"]
     latest = database.get_latest_plan(user_id)
-    assert latest.source == "gemini"
+    assert latest.source == "gemini" and latest.tip_source == "gemini"
     assert "**" not in latest.nutrition_tip
 
 
@@ -309,7 +368,7 @@ def test_gemini_overloaded_primary_falls_back(client, monkeypatch):
     from app.demo_data import demo_workout_plan
     used = []
 
-    def flaky(model, contents, gen_config, retries=1):
+    def flaky(model, contents, gen_config, deadline=None):
         used.append(model)
         if model == config.GEMINI_WORKOUT_MODEL:
             raise GeminiError("busy", "overloaded")

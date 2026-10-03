@@ -10,5 +10,5 @@ venv/
 *.db-shm
 reports/*.db
 
-# Claude Code project instructions (local only)
+# Local AI-assistant project notes
 CLAUDE.md

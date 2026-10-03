@@ -3,7 +3,7 @@
 <section class="hero">
   <h1>Your AI-powered 7-day fitness plan</h1>
   <p>Tell us about yourself and FitBuddy will build a personalized weekly workout with a
-     nutrition &amp; recovery tip — powered by Google Gemini.</p>
+     nutrition &amp; recovery tip, powered by Google Gemini.</p>
 </section>
 
 <section class="card form-card">
@@ -17,33 +17,33 @@
   <form id="plan-form" method="post" action="/generate-workout">
     <div class="field">
       <label for="name">Name</label>
-      <input id="name" name="name" type="text" required maxlength="100"
+      <input id="name" name="name" type="text" required maxlength="{{ limits.name }}"
              value="{{ form.name or '' }}" placeholder="e.g. Priya">
     </div>
 
     <div class="row">
       <div class="field">
         <label for="age">Age</label>
-        <input id="age" name="age" type="number" required min="13" max="90"
-               value="{{ form.age or '' }}" placeholder="13–90">
+        <input id="age" name="age" type="number" required min="{{ limits.min_age }}" max="{{ limits.max_age }}"
+               value="{{ form.age or '' }}" placeholder="{{ limits.min_age }}-{{ limits.max_age }}">
       </div>
       <div class="field">
         <label for="weight">Weight (kg)</label>
-        <input id="weight" name="weight" type="number" required min="25" max="300" step="0.1"
-               value="{{ form.weight or '' }}" placeholder="25–300">
+        <input id="weight" name="weight" type="number" required min="{{ limits.min_weight }}" max="{{ limits.max_weight }}" step="0.1"
+               value="{{ form.weight or '' }}" placeholder="{{ limits.min_weight }}-{{ limits.max_weight }}">
       </div>
     </div>
 
     <div class="field">
       <label for="goal">Fitness goal</label>
       <select id="goal" name="goal" required>
-        <option value="" disabled {% if not form.goal %}selected{% endif %}>Choose a goal…</option>
+        <option value="" disabled {% if not form.goal %}selected{% endif %}>Choose a goal...</option>
         {% for g in common_goals %}
         <option value="{{ g }}" {% if form.goal == g %}selected{% endif %}>{{ g | title }}</option>
         {% endfor %}
-        <option value="other" {% if form.goal == 'other' %}selected{% endif %}>Other…</option>
+        <option value="other" {% if form.goal == 'other' %}selected{% endif %}>Other...</option>
       </select>
-      <input id="goal_other" name="goal_other" type="text" maxlength="200"
+      <input id="goal_other" name="goal_other" type="text" maxlength="{{ limits.goal }}"
              class="{% if form.goal != 'other' %}hidden{% endif %}"
              value="{{ form.goal_other or '' }}" placeholder="Describe your goal (e.g. run a 5K)">
     </div>
@@ -73,9 +73,9 @@
 
     <button type="submit" class="btn btn-primary btn-block" id="submit-btn">
       <span class="btn-label">Generate my plan</span>
-      <span class="btn-loading"><span class="spinner"></span> Generating your plan…</span>
+      <span class="btn-loading"><span class="spinner"></span> Generating your plan...</span>
     </button>
-    <p class="hint">Generation can take 10–30 seconds.</p>
+    <p class="hint">Generation usually takes 5-20 seconds.</p>
   </form>
 </section>
 {% endblock %}

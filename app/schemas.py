@@ -1,7 +1,17 @@
 """Pydantic schemas: request bodies and the structured WorkoutPlan returned by Gemini."""
-from typing import Literal, Optional
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
+
+from app import config
+
+MIN_AGE = 13
+MAX_AGE = 90
+MIN_WEIGHT_KG = 25
+MAX_WEIGHT_KG = 300
+MAX_GOAL_LENGTH = 200
+MAX_NAME_LENGTH = 100
+HEAVY_WEIGHT_KG = 110  # the plan prompt favours low-impact cardio from this body weight
 
 COMMON_GOALS = ["weight loss", "muscle gain", "general fitness", "flexibility", "endurance"]
 Intensity = Literal["low", "medium", "high"]
@@ -12,14 +22,14 @@ Experience = Literal["beginner", "intermediate", "advanced"]
 
 class Exercise(BaseModel):
     name: str
-    sets: Optional[int] = None
+    sets: int | None = None
     reps: str
-    rest_seconds: Optional[int] = None
-    notes: Optional[str] = None
+    rest_seconds: int | None = None
+    notes: str | None = None
 
     @field_validator("sets", "rest_seconds")
     @classmethod
-    def positive_if_set(cls, v: Optional[int], info) -> Optional[int]:
+    def positive_if_set(cls, v: int | None, info) -> int | None:
         # Checked here rather than with Field(ge=1) to keep the Gemini response_schema simple.
         if v is not None and v < 1:
             raise ValueError(f"{info.field_name} must be a positive number, got {v}")
@@ -67,17 +77,21 @@ def wrap_untrusted(tag: str, text: str) -> str:
 # ---------- Requests ----------
 
 def _clean_goal(v: str) -> str:
-    v = (v or "").strip()
+    """Strip the goal and normalise common goals to lower case."""
+    v = v.strip()
     if not v:
         raise ValueError("goal is required")
     return v.lower() if v.lower() in COMMON_GOALS else v
 
 
+Goal = Annotated[str, Field(min_length=1, max_length=MAX_GOAL_LENGTH), AfterValidator(_clean_goal)]
+
+
 class UserInput(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    age: int = Field(ge=13, le=90)
-    weight_kg: float = Field(ge=25, le=300)
-    goal: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    age: int = Field(ge=MIN_AGE, le=MAX_AGE)
+    weight_kg: float = Field(ge=MIN_WEIGHT_KG, le=MAX_WEIGHT_KG)
+    goal: Goal
     intensity: Intensity
     experience: Experience = "beginner"
 
@@ -89,28 +103,18 @@ class UserInput(BaseModel):
             raise ValueError("name is required")
         return v
 
-    @field_validator("goal")
-    @classmethod
-    def clean_goal(cls, v: str) -> str:
-        return _clean_goal(v)
-
 
 class QuickWorkoutRequest(BaseModel):
     """Body for POST /generate-workout/gemini (no DB write)."""
-    goal: str = Field(min_length=1, max_length=200)
+    goal: Goal
     intensity: Intensity
-    age: Optional[int] = Field(default=None, ge=13, le=90)
-    weight: Optional[float] = Field(default=None, ge=25, le=300)
+    age: int | None = Field(default=None, ge=MIN_AGE, le=MAX_AGE)
+    weight: float | None = Field(default=None, ge=MIN_WEIGHT_KG, le=MAX_WEIGHT_KG)
     experience: Experience = "beginner"
-
-    @field_validator("goal")
-    @classmethod
-    def clean_goal(cls, v: str) -> str:
-        return _clean_goal(v)
 
 
 class FeedbackRequest(BaseModel):
-    feedback: str = Field(min_length=1, max_length=500)
+    feedback: str = Field(min_length=1, max_length=config.MAX_FEEDBACK_LENGTH)
 
     @field_validator("feedback")
     @classmethod

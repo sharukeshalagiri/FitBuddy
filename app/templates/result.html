@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ user.name }}'s plan – FitBuddy{% endblock %}
+{% block title %}{{ user.name }}'s plan - FitBuddy{% endblock %}
 {% block content %}
 
 {% if updated %}
@@ -11,7 +11,7 @@
 
 <section class="card user-card">
   <div>
-    <h1>Hi {{ user.name }} 👋</h1>
+    <h1>Hi {{ user.name }}</h1>
     <p class="muted">Here is your personalized plan.</p>
   </div>
   <div class="user-stats">
@@ -27,18 +27,18 @@
   <div>
     <strong>Version {{ current.version }}</strong>
     {% if current.version == 1 %}(original){% endif %}
-    {% if not is_latest %}<span class="tag">Older version</span> <a href="/plan/{{ user.id }}">View latest (v{{ latest.version }}) →</a>{% endif %}
+    {% if not is_latest %}<span class="tag">Older version</span> <a href="/plan/{{ user.id }}">View latest (v{{ latest.version }})</a>{% endif %}
     {% if current.source == 'demo' %}<span class="badge badge-demo">Demo plan</span>{% endif %}
-    {% if current.feedback %}<div class="muted small">Based on feedback: “{{ current.feedback }}”</div>{% endif %}
+    {% if current.feedback %}<div class="muted small">Based on feedback: "{{ current.feedback }}"</div>{% endif %}
   </div>
-  <button type="button" class="btn btn-secondary" onclick="window.print()">🖨 Print plan</button>
+  <button type="button" class="btn btn-secondary" onclick="window.print()">Print plan</button>
 </div>
 
 {% include "_plan.html" %}
 
 {% if current.nutrition_tip %}
 <section class="card tip-card">
-  <h3>💡 Nutrition &amp; recovery tip</h3>
+  <h3>Nutrition &amp; recovery tip</h3>
   <p>{{ current.nutrition_tip }}</p>
 </section>
 {% endif %}
@@ -46,7 +46,7 @@
 <div class="two-col no-print">
   <section class="card feedback-card">
     <h3>Want changes?</h3>
-    <p class="muted">Tell FitBuddy what to adjust — your latest plan (v{{ latest.version }}) will be revised and the previous versions kept.</p>
+    <p class="muted">Tell FitBuddy what to adjust. Your latest plan (v{{ latest.version }}) will be revised and the previous versions kept.</p>
     <form method="post" action="/submit-feedback" id="feedback-form">
       <input type="hidden" name="user_id" value="{{ user.id }}">
       <div class="chips">
@@ -54,11 +54,11 @@
         <button type="button" class="chip" data-text="{{ c }}">{{ c }}</button>
         {% endfor %}
       </div>
-      <textarea name="feedback" id="feedback" rows="4" maxlength="500" required
+      <textarea name="feedback" id="feedback" rows="4" maxlength="{{ limits.feedback }}" required
                 placeholder="e.g. I'd like more cardio and only 45-minute sessions">{{ feedback_value }}</textarea>
       <button type="submit" class="btn btn-primary" id="fb-btn">
         <span class="btn-label">Update my plan</span>
-        <span class="btn-loading"><span class="spinner"></span> Updating your plan…</span>
+        <span class="btn-loading"><span class="spinner"></span> Updating your plan...</span>
       </button>
     </form>
   </section>
@@ -70,7 +70,7 @@
       <li class="{% if p.version == current.version %}active{% endif %}">
         <a href="/plan/{{ user.id }}/version/{{ p.version }}">v{{ p.version }}</a>
         <span class="muted small">{{ p.created_at.strftime('%d %b %Y, %H:%M') }} UTC</span>
-        <div class="small">{% if p.feedback %}“{{ p.feedback | truncate(80) }}”{% else %}Original plan{% endif %}</div>
+        <div class="small">{% if p.feedback %}"{{ p.feedback | truncate(80) }}"{% else %}Original plan{% endif %}</div>
       </li>
       {% endfor %}
     </ol>

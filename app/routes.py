@@ -6,9 +6,8 @@ SDK calls never block the event loop.
 import hmac
 import logging
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -19,13 +18,20 @@ from app.demo_data import demo_nutrition_tip
 from app.gemini_client import GeminiError
 from app.gemini_flash_generator import generate_nutrition_tip_with_flash
 from app.gemini_generator import generate_workout_gemini
-from app.schemas import COMMON_GOALS, FeedbackRequest, QuickWorkoutRequest, UserInput
+from app.schemas import (COMMON_GOALS, MAX_AGE, MAX_GOAL_LENGTH, MAX_NAME_LENGTH, MAX_WEIGHT_KG,
+                         MIN_AGE, MIN_WEIGHT_KG, FeedbackRequest, QuickWorkoutRequest,
+                         UserInput)
 from app.updated_plan import update_workout_plan
 
 log = logging.getLogger("fitbuddy.routes")
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-templates.env.globals.update(demo_mode=lambda: config.DEMO_MODE, common_goals=COMMON_GOALS)
+templates.env.globals.update(
+    demo_mode=lambda: config.DEMO_MODE, common_goals=COMMON_GOALS,
+    limits={"min_age": MIN_AGE, "max_age": MAX_AGE, "min_weight": MIN_WEIGHT_KG,
+            "max_weight": MAX_WEIGHT_KG, "name": MAX_NAME_LENGTH, "goal": MAX_GOAL_LENGTH,
+            "feedback": config.MAX_FEEDBACK_LENGTH},
+)
 
 ADMIN_COOKIE = "fitbuddy_admin"
 ADMIN_MAX_AGE = 8 * 3600
@@ -50,20 +56,21 @@ def _create_plan_for(data: UserInput) -> tuple[int, int, dict, str]:
     """Generate plan + tip, then persist user and v1. Raises GeminiError (nothing saved)."""
     plan, source, _ = generate_workout_gemini(data.goal, data.intensity, data.experience,
                                               data.age, data.weight_kg)
-    tip = _tip_or_fallback(data.goal, data.age)
+    tip, tip_source = _tip_or_fallback(data.goal, data.age)
     user_id = db.save_user(data.name, data.age, data.weight_kg, data.goal,
                            data.intensity, data.experience)
-    version = db.save_plan(user_id, plan, tip, source)
+    version = db.save_plan(user_id, plan, tip, source, tip_source=tip_source)
     return user_id, version, plan, tip
 
 
-def _tip_or_fallback(goal: str, age: Optional[int]) -> str:
-    """The tip is secondary: if the tip model fails, use the curated tip, never an error."""
+def _tip_or_fallback(goal: str, age: int | None) -> tuple[str, str]:
+    """Return (tip, source). The tip is secondary: if the tip model fails, use the curated
+    tip with source "fallback", never an error."""
     try:
-        return generate_nutrition_tip_with_flash(goal, age)[0]
+        return generate_nutrition_tip_with_flash(goal, age)
     except GeminiError as exc:
         log.warning("Tip generation failed (%s); using curated tip", exc)
-        return demo_nutrition_tip(goal, age)
+        return demo_nutrition_tip(goal, age), "fallback"
 
 
 def _revise(user_id: int, feedback: str) -> tuple[int, dict]:
@@ -72,7 +79,8 @@ def _revise(user_id: int, feedback: str) -> tuple[int, dict]:
     if not user or not latest:
         raise HTTPException(404, "No plan found for this user")
     revised, source = update_workout_plan(latest.plan, feedback, user)
-    version = db.update_plan(user_id, revised, feedback, latest.nutrition_tip, source)
+    version = db.update_plan(user_id, revised, feedback, latest.nutrition_tip, source,
+                             tip_source=latest.tip_source)
     return version, revised
 
 
@@ -90,7 +98,7 @@ def is_admin(request: Request) -> bool:
         return False
 
 
-def _render_plan(request: Request, user_id: int, version: Optional[int] = None,
+def _render_plan(request: Request, user_id: int, version: int | None = None,
                  status_code: int = 200, **extra) -> HTMLResponse:
     user = db.get_user(user_id)
     if not user:
@@ -168,7 +176,7 @@ def submit_feedback(request: Request, user_id: int = Form(...), feedback: str = 
     except GeminiError:
         return _render_plan(request, user_id, status_code=502, feedback_value=feedback,
                             error="Sorry, we couldn't update your plan right now. "
-                                  "Your current plan is unchanged — please try again.")
+                                  "Your current plan is unchanged, please try again.")
     return RedirectResponse(f"/plan/{user_id}?updated=1", status_code=303)
 
 
@@ -235,13 +243,12 @@ def api_generate_workout(body: QuickWorkoutRequest):
 
 
 @router.get("/nutrition-tip", tags=["API"])
-def api_nutrition_tip(goal: str, age: Optional[int] = None):
+def api_nutrition_tip(goal: str = Query(min_length=1, max_length=MAX_GOAL_LENGTH),
+                      age: int | None = Query(None, ge=MIN_AGE, le=MAX_AGE)):
     """Get a short nutrition/recovery tip for a goal (optionally age-aware)."""
     goal = goal.strip()
-    if not goal or len(goal) > 200:
-        raise HTTPException(422, "goal must be 1–200 characters")
-    if age is not None and not 13 <= age <= 90:
-        raise HTTPException(422, "age must be between 13 and 90")
+    if not goal:
+        raise HTTPException(422, "goal must not be blank")
     try:
         tip, _ = generate_nutrition_tip_with_flash(goal, age)
     except GeminiError as exc:
